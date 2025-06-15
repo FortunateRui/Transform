@@ -125,29 +125,17 @@ class DataProcessor:
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.data.batch_size,
-            shuffle=True,
-            num_workers=4,  # 每个GPU使用4个工作进程
-            pin_memory=True,  # 使用固定内存加速数据传输
-            persistent_workers=True,  # 保持工作进程存活
-            prefetch_factor=2  # 预加载因子
+            shuffle=True
         )
         val_loader = DataLoader(
             val_dataset,
             batch_size=self.config.data.batch_size,
-            shuffle=False,
-            num_workers=4,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=2
+            shuffle=False
         )
         test_loader = DataLoader(
             test_dataset,
             batch_size=self.config.data.batch_size,
-            shuffle=False,
-            num_workers=4,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=2
+            shuffle=False
         )
         
         return train_loader, val_loader, test_loader
