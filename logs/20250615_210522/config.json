@@ -1,0 +1,67 @@
+{
+    "data": {
+        "data_path": "/root/Transform/data/weather.csv",
+        "time_column": "Formatted Date",
+        "input_features": [
+            "Temperature (C)",
+            "Apparent Temperature (C)",
+            "Humidity",
+            "Wind Speed (km/h)",
+            "Wind Bearing (degrees)",
+            "Visibility (km)",
+            "Pressure (millibars)",
+            "Precip Type"
+        ],
+        "categorical_features": "Precip Type",
+        "target_features": [
+            "Temperature (C)",
+            "Apparent Temperature (C)",
+            "Humidity",
+            "Wind Speed (km/h)",
+            "Wind Bearing (degrees)",
+            "Visibility (km)",
+            "Pressure (millibars)"
+        ],
+        "sequence_length": 24,
+        "prediction_length": 1,
+        "train_ratio": 0.7,
+        "val_ratio": 0.15,
+        "test_ratio": 0.15,
+        "normalize": true,
+        "batch_size": 32
+    },
+    "model": {
+        "input_dim": 10,
+        "d_model": 512,
+        "nhead": 8,
+        "num_encoder_layers": 6,
+        "dim_feedforward": 2048,
+        "dropout": 0.1,
+        "prediction_length": 1
+    },
+    "training": {
+        "seed": 42,
+        "device": "cuda",
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "use_lr_scheduler": true,
+        "scheduler_patience": 5,
+        "scheduler_factor": 0.5,
+        "early_stopping": true,
+        "early_stopping_patience": 10,
+        "gradient_clip_val": 1.0,
+        "weight_decay": 0.01
+    },
+    "logging": {
+        "log_dir": "/root/Transform/logs",
+        "model_dir": "/root/Transform/pth",
+        "plot_dir": "/root/Transform/plots",
+        "experiment_name": "weather_prediction",
+        "log_every_n_steps": 100,
+        "val_every_n_epochs": 1,
+        "plot_every_n_epochs": 1,
+        "save_latest_model": true,
+        "save_best_model": true,
+        "best_model_metric": "val_loss"
+    }
+}
