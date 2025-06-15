@@ -34,7 +34,13 @@ class Trainer:
         
         # 设置设备
         self.device = torch.device(config.training.device)
+        
+        # 启用多GPU训练
+        if torch.cuda.device_count() > 1:
+            self.logger.log_info(f"使用 {torch.cuda.device_count()} 个GPU进行训练")
+            self.model = nn.DataParallel(self.model)
         self.model.to(self.device)
+        
         self.logger.log_info(f"使用设备: {self.device}")
         if self.device.type == 'cuda':
             self.logger.log_info(f"GPU型号: {torch.cuda.get_device_name(0)}")
@@ -72,11 +78,16 @@ class Trainer:
         """设置中断处理"""
         def signal_handler(signum, frame):
             self.logger.log_warning("训练被中断，正在保存模型和日志...")
-            self.save_checkpoint(is_interrupted=True)
-            self.visualize_training()
+            try:
+                self.save_checkpoint()  # 保存最新模型
+                self.visualize_training()  # 保存训练可视化
+            except Exception as e:
+                self.logger.log_error(f"保存中断状态时出错: {str(e)}")
             sys.exit(0)
             
+        # 注册信号处理器
         signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
         
     def train_epoch(self):
         """训练一个epoch"""
@@ -177,65 +188,39 @@ class Trainer:
         
         return avg_loss, avg_mae, avg_accuracy
     
-    def save_checkpoint(self, is_interrupted: bool = False):
+    def save_checkpoint(self, is_best: bool = False):
         """保存检查点"""
-        # 如果不是中断状态，且不是最后一个epoch，则根据保存频率决定是否保存
-        if not is_interrupted and self.current_epoch < self.config.training.epochs - 1:
-            if self.current_epoch % self.config.logging.save_frequency != 0:
-                return
-                
-        try:
-            checkpoint = {
-                'epoch': self.current_epoch,
-                'model_state_dict': self.model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'train_losses': self.train_losses,
-                'val_losses': self.val_losses,
-                'best_val_loss': self.best_val_loss
-            }
+        checkpoint = {
+            'epoch': self.current_epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'train_losses': self.train_losses,
+            'val_losses': self.val_losses,
+            'best_val_loss': self.best_val_loss
+        }
+        
+        # 保存最新模型
+        latest_path = os.path.join(self.config.logging.log_dir, 'latest_model.pth')
+        torch.save(checkpoint, latest_path)
+        self.logger.log_info(f"已保存最新模型到: {latest_path}")
+        
+        # 如果是最佳模型，额外保存一份
+        if is_best:
+            best_path = os.path.join(self.config.logging.log_dir, 'best_model.pth')
+            torch.save(checkpoint, best_path)
+            self.logger.log_info(f"已保存最佳模型到: {best_path}")
             
-            if self.config.training.use_lr_scheduler:
-                checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
-            
-            # 保存最新模型
-            if self.config.logging.save_latest_model or is_interrupted:
-                latest_path = os.path.join(self.model_save_dir, "latest_model.pth")
-                torch.save(checkpoint, latest_path)
-                self.logger.log_info(f"已保存最新模型到: {latest_path}")
-            
-            # 保存最佳模型
-            if self.config.logging.save_best_model and not is_interrupted:
-                if self.val_losses[-1] < self.best_val_loss:
-                    self.best_val_loss = self.val_losses[-1]
-                    best_path = os.path.join(self.model_save_dir, "best_model.pth")
-                    torch.save(checkpoint, best_path)
-                    self.logger.log_info(f"已保存最佳模型到: {best_path}")
-                    
-        except Exception as e:
-            self.logger.log_error(f"保存检查点时出错: {str(e)}")
-            # 如果保存失败，尝试保存到备份文件
-            try:
-                backup_dir = os.path.join(self.model_save_dir, "backup")
-                os.makedirs(backup_dir, exist_ok=True)
-                backup_path = os.path.join(backup_dir, f"checkpoint_epoch_{self.current_epoch}.pth")
-                torch.save(checkpoint, backup_path)
-                self.logger.log_info(f"已保存备份检查点到: {backup_path}")
-            except Exception as backup_e:
-                self.logger.log_error(f"保存备份检查点也失败: {str(backup_e)}")
-                
     def load_checkpoint(self, checkpoint_path: str):
         """加载检查点"""
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.current_epoch = checkpoint['epoch']
         self.train_losses = checkpoint['train_losses']
         self.val_losses = checkpoint['val_losses']
         self.best_val_loss = checkpoint['best_val_loss']
+        self.logger.log_info(f"已加载检查点: {checkpoint_path}")
         
-        if self.config.training.use_lr_scheduler and 'scheduler_state_dict' in checkpoint:
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            
     def visualize_training(self):
         """可视化训练过程"""
         self.visualizer.plot_loss_curves(
@@ -290,10 +275,10 @@ class Trainer:
                     if self.early_stopping_counter >= self.config.training.early_stopping_patience:
                         self.logger.log_info("触发早停机制，停止训练")
                         break
-                    
-        except KeyboardInterrupt:
-            self.logger.log_warning("训练被中断")
-        finally:
-            self.save_checkpoint(is_interrupted=True)
-            self.visualize_training()
-            self.logger.log_info("训练结束") 
+                        
+        except Exception as e:
+            self.logger.log_error(f"训练过程中出现错误: {str(e)}")
+            # 保存当前状态
+            self.save_checkpoint()  # 保存最新模型
+            self.visualize_training()  # 保存训练可视化
+            raise e 
