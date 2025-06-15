@@ -58,7 +58,7 @@ class DataConfig:
     normalize: bool = True
     
     # 批处理大小
-    batch_size: int = 64
+    batch_size: int = 256
 
 @dataclass
 class ModelConfig:
@@ -94,7 +94,7 @@ class TrainingConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     
     # 训练轮数
-    epochs: int = 100
+    epochs: int = 200
     
     # 学习率
     learning_rate: float = 5e-5
@@ -106,7 +106,7 @@ class TrainingConfig:
     
     # 早停
     early_stopping: bool = True
-    early_stopping_patience: int = 10
+    early_stopping_patience: int = 15
     
     # 梯度裁剪
     gradient_clip_val: float = 1.0
