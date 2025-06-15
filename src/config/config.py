@@ -67,16 +67,16 @@ class ModelConfig:
     input_dim: int = 10  # 7个数值特征 + 3个分类特征（降水类型的独热编码）
     
     # 模型维度
-    d_model: int = 512
+    d_model: int = 1024
     
     # 注意力头数
-    nhead: int = 8
+    nhead: int = 16
     
     # 编码器层数
-    num_encoder_layers: int = 6
+    num_encoder_layers: int = 12
     
     # 前馈网络维度
-    dim_feedforward: int = 2048
+    dim_feedforward: int = 4096
     
     # Dropout比率
     dropout: float = 0.1
@@ -97,7 +97,7 @@ class TrainingConfig:
     epochs: int = 100
     
     # 学习率
-    learning_rate: float = 0.001
+    learning_rate: float = 5e-5
     
     # 学习率调度器
     use_lr_scheduler: bool = True
