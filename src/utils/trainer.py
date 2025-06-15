@@ -162,6 +162,11 @@ class Trainer:
     
     def save_checkpoint(self, is_interrupted: bool = False):
         """保存检查点"""
+        # 如果不是中断状态，且不是最后一个epoch，则根据保存频率决定是否保存
+        if not is_interrupted and self.current_epoch < self.config.training.epochs - 1:
+            if self.current_epoch % self.config.logging.save_frequency != 0:
+                return
+                
         try:
             checkpoint = {
                 'epoch': self.current_epoch,
@@ -175,40 +180,25 @@ class Trainer:
             if self.config.training.use_lr_scheduler:
                 checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
             
-            # 创建时间戳目录
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_save_dir = os.path.join(self.config.logging.model_dir, timestamp)
-            os.makedirs(model_save_dir, exist_ok=True)
-            
             # 保存最新模型
             if self.config.logging.save_latest_model or is_interrupted:
-                # 先保存到临时文件
-                temp_path = os.path.join(model_save_dir, "latest_model_temp.pth")
-                torch.save(checkpoint, temp_path)
-                # 如果临时文件保存成功，再重命名为正式文件
-                final_path = os.path.join(model_save_dir, "latest_model.pth")
-                if os.path.exists(final_path):
-                    os.remove(final_path)
-                os.rename(temp_path, final_path)
+                latest_path = os.path.join(self.model_save_dir, "latest_model.pth")
+                torch.save(checkpoint, latest_path)
+                self.logger.log_info(f"已保存最新模型到: {latest_path}")
             
             # 保存最佳模型
             if self.config.logging.save_best_model and not is_interrupted:
                 if self.val_losses[-1] < self.best_val_loss:
                     self.best_val_loss = self.val_losses[-1]
-                    # 先保存到临时文件
-                    temp_path = os.path.join(model_save_dir, "best_model_temp.pth")
-                    torch.save(checkpoint, temp_path)
-                    # 如果临时文件保存成功，再重命名为正式文件
-                    final_path = os.path.join(model_save_dir, "best_model.pth")
-                    if os.path.exists(final_path):
-                        os.remove(final_path)
-                    os.rename(temp_path, final_path)
+                    best_path = os.path.join(self.model_save_dir, "best_model.pth")
+                    torch.save(checkpoint, best_path)
+                    self.logger.log_info(f"已保存最佳模型到: {best_path}")
                     
         except Exception as e:
             self.logger.log_error(f"保存检查点时出错: {str(e)}")
             # 如果保存失败，尝试保存到备份文件
             try:
-                backup_dir = os.path.join(model_save_dir, "backup")
+                backup_dir = os.path.join(self.model_save_dir, "backup")
                 os.makedirs(backup_dir, exist_ok=True)
                 backup_path = os.path.join(backup_dir, f"checkpoint_epoch_{self.current_epoch}.pth")
                 torch.save(checkpoint, backup_path)
