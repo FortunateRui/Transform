@@ -58,7 +58,7 @@ class DataConfig:
     normalize: bool = True
     
     # 批处理大小
-    batch_size: int = 256
+    batch_size: int = 64
 
 @dataclass
 class ModelConfig:
