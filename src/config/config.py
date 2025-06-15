@@ -131,6 +131,9 @@ class LoggingConfig:
     # 验证频率（每N个epoch验证一次）
     val_every_n_epochs: int = 1
     
+    # 每多少个epoch绘制一次图表
+    plot_every_n_epochs: int = 1
+    
     # 模型保存配置
     save_latest_model: bool = True  # 是否保存最新模型
     save_best_model: bool = True    # 是否保存最佳模型
