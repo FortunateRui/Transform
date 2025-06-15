@@ -20,6 +20,10 @@ class Visualizer:
         plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
         plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
         
+        # 设置中文字体
+        plt.rcParams['font.family'] = ['Noto Sans CJK SC', 'sans-serif']
+        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+        
     def plot_loss_curves(
         self,
         train_losses: List[float],
