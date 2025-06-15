@@ -3,23 +3,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+from typing import Dict, List, Optional
 from ..config.config import Config, LoggingConfig
 from .logger import Logger
 
 class Visualizer:
     """Visualization tool class"""
     
-    def __init__(self, config: LoggingConfig):
+    def __init__(self, config: Config, logger: Logger):
         """Initialize visualizer"""
         self.config = config
-        self.log_dir = config.log_dir
-        self.logger = Logger(config)
-        self.plot_dir = self.logger.get_log_dir()
+        self.logger = logger
+        self.plot_dir = logger.get_log_dir()
         os.makedirs(self.plot_dir, exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Set basic matplotlib style
-        plt.style.use('seaborn')
+        sns.set_style("whitegrid")
         plt.rcParams['axes.grid'] = True
         plt.rcParams['grid.alpha'] = 0.3
         
