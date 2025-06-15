@@ -162,38 +162,59 @@ class Trainer:
     
     def save_checkpoint(self, is_interrupted: bool = False):
         """保存检查点"""
-        checkpoint = {
-            'epoch': self.current_epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
-            'best_val_loss': self.best_val_loss
-        }
-        
-        if self.config.training.use_lr_scheduler:
-            checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
+        try:
+            checkpoint = {
+                'epoch': self.current_epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'train_losses': self.train_losses,
+                'val_losses': self.val_losses,
+                'best_val_loss': self.best_val_loss
+            }
             
-        # 创建时间戳目录
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_save_dir = os.path.join(self.config.logging.model_dir, timestamp)
-        os.makedirs(model_save_dir, exist_ok=True)
+            if self.config.training.use_lr_scheduler:
+                checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
             
-        # 保存最新模型
-        if self.config.logging.save_latest_model or is_interrupted:
-            torch.save(
-                checkpoint,
-                os.path.join(model_save_dir, "latest_model.pth")
-            )
+            # 创建时间戳目录
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            model_save_dir = os.path.join(self.config.logging.model_dir, timestamp)
+            os.makedirs(model_save_dir, exist_ok=True)
             
-        # 保存最佳模型
-        if self.config.logging.save_best_model and not is_interrupted:
-            if self.val_losses[-1] < self.best_val_loss:
-                self.best_val_loss = self.val_losses[-1]
-                torch.save(
-                    checkpoint,
-                    os.path.join(model_save_dir, "best_model.pth")
-                )
+            # 保存最新模型
+            if self.config.logging.save_latest_model or is_interrupted:
+                # 先保存到临时文件
+                temp_path = os.path.join(model_save_dir, "latest_model_temp.pth")
+                torch.save(checkpoint, temp_path)
+                # 如果临时文件保存成功，再重命名为正式文件
+                final_path = os.path.join(model_save_dir, "latest_model.pth")
+                if os.path.exists(final_path):
+                    os.remove(final_path)
+                os.rename(temp_path, final_path)
+            
+            # 保存最佳模型
+            if self.config.logging.save_best_model and not is_interrupted:
+                if self.val_losses[-1] < self.best_val_loss:
+                    self.best_val_loss = self.val_losses[-1]
+                    # 先保存到临时文件
+                    temp_path = os.path.join(model_save_dir, "best_model_temp.pth")
+                    torch.save(checkpoint, temp_path)
+                    # 如果临时文件保存成功，再重命名为正式文件
+                    final_path = os.path.join(model_save_dir, "best_model.pth")
+                    if os.path.exists(final_path):
+                        os.remove(final_path)
+                    os.rename(temp_path, final_path)
+                    
+        except Exception as e:
+            self.logger.log_error(f"保存检查点时出错: {str(e)}")
+            # 如果保存失败，尝试保存到备份文件
+            try:
+                backup_dir = os.path.join(model_save_dir, "backup")
+                os.makedirs(backup_dir, exist_ok=True)
+                backup_path = os.path.join(backup_dir, f"checkpoint_epoch_{self.current_epoch}.pth")
+                torch.save(checkpoint, backup_path)
+                self.logger.log_info(f"已保存备份检查点到: {backup_path}")
+            except Exception as backup_e:
+                self.logger.log_error(f"保存备份检查点也失败: {str(backup_e)}")
                 
     def load_checkpoint(self, checkpoint_path: str):
         """加载检查点"""
