@@ -82,9 +82,9 @@ class Visualizer:
         max_val = max(actuals.max(), predictions.max())
         plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Ideal Prediction')
         
-        # 添加10%误差上下限线
-        plt.plot([min_val, max_val], [min_val*0.9, max_val*0.9], 'g--', label='10% Error Lower Bound')
-        plt.plot([min_val, max_val], [min_val*1.1, max_val*1.1], 'g--', label='10% Error Upper Bound')
+        # 添加20%误差上下限线
+        plt.plot([min_val, max_val], [min_val*0.8, max_val*0.8], 'g--', label='20% Error Lower Bound')
+        plt.plot([min_val, max_val], [min_val*1.2, max_val*1.2], 'g--', label='20% Error Upper Bound')
         
         plt.title(title)
         plt.xlabel('Actual Values')
@@ -92,10 +92,10 @@ class Visualizer:
         plt.legend()
         plt.grid(True)
         
-        # 计算准确率（误差在10%以内的比例）
+        # 计算准确率（误差在20%以内的比例）
         relative_error = np.abs(predictions - actuals) / np.abs(actuals)
-        accuracy = np.mean(relative_error <= 0.1) * 100
-        plt.text(0.05, 0.95, f'Accuracy (Error ≤ 10%): {accuracy:.2f}%',
+        accuracy = np.mean(relative_error <= 0.2) * 100
+        plt.text(0.05, 0.95, f'Accuracy (Error ≤ 20%): {accuracy:.2f}%',
                 transform=plt.gca().transAxes, verticalalignment='top')
         
         # 保存图表

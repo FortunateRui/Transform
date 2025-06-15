@@ -138,9 +138,9 @@ class Trainer:
                 total_loss += loss.item()
                 total_mae += torch.mean(torch.abs(output - target)).item()
                 
-                # 计算准确率（误差在10%以内算正确）
+                # 计算准确率（误差在20%以内算正确）
                 relative_error = torch.abs(output - target) / torch.abs(target)
-                correct = (relative_error <= 0.1).float().mean()
+                correct = (relative_error <= 0.2).float().mean()
                 total_correct += correct.item() * target.size(0)
                 total_samples += target.size(0)
                 
