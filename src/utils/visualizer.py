@@ -21,7 +21,7 @@ class Visualizer:
         plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
         
         # 设置中文字体
-        plt.rcParams['font.family'] = ['Noto Sans CJK SC', 'sans-serif']
+        plt.rcParams['font.family'] = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'sans-serif']
         plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
         
     def plot_loss_curves(
