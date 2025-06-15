@@ -67,22 +67,29 @@ class ModelConfig:
     input_dim: int = 10  # 7个数值特征 + 3个分类特征（降水类型的独热编码）
     
     # 模型维度
-    d_model: int = 512
+    d_model: int = 1024  # 增加模型维度
     
     # 注意力头数
-    nhead: int = 8
+    nhead: int = 16  # 增加注意力头数
     
     # 编码器层数
-    num_encoder_layers: int = 6
+    num_encoder_layers: int = 12  # 增加编码器层数
     
     # 前馈网络维度
-    dim_feedforward: int = 2048
+    dim_feedforward: int = 4096  # 增加前馈网络维度
     
     # Dropout比率
     dropout: float = 0.1
     
     # 预测长度
     prediction_length: int = 1
+    
+    # 新增参数
+    activation: str = "gelu"
+    layer_norm_eps: float = 1e-5
+    batch_first: bool = True
+    norm_first: bool = True
+    bias: bool = True
 
 @dataclass
 class TrainingConfig:
@@ -97,7 +104,7 @@ class TrainingConfig:
     epochs: int = 100
     
     # 学习率
-    learning_rate: float = 0.001
+    learning_rate: float = 5e-5  # 调整学习率
     
     # 学习率调度器
     use_lr_scheduler: bool = True
@@ -113,6 +120,15 @@ class TrainingConfig:
     
     # 权重衰减
     weight_decay: float = 0.01
+    
+    # 训练参数
+    batch_size: int = 512  # 增加批处理大小
+    gradient_accumulation_steps: int = 4  # 梯度累积步数
+    max_grad_norm: float = 1.0
+    warmup_steps: int = 1000
+    mixed_precision: bool = True  # 启用混合精度训练
+    gradient_clipping: bool = True
+    early_stopping_min_delta: float = 1e-4
 
 @dataclass
 class LoggingConfig:

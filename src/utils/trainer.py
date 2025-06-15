@@ -78,51 +78,71 @@ class Trainer:
             
         signal.signal(signal.SIGINT, signal_handler)
         
-    def train_epoch(self) -> float:
+    def train_epoch(self):
         """训练一个epoch"""
         self.model.train()
         total_loss = 0
+        total_mae = 0
         total_correct = 0
         total_samples = 0
+        batch_count = 0
         
         for batch_idx, (data, target) in enumerate(self.train_loader):
             data, target = data.to(self.device), target.to(self.device)
             
+            # 前向传播
             self.optimizer.zero_grad()
             output = self.model(data)
+            
+            # 计算损失
             loss = self.criterion(output, target)
+            
+            # 计算MAE
+            mae = torch.mean(torch.abs(output - target))
+            
+            # 计算准确率（误差在20%以内算正确）
+            relative_error = torch.abs(output - target) / (torch.abs(target) + 1e-6)  # 添加小量避免除零
+            correct = (relative_error <= 0.2).float().mean()
+            
+            # 缩放损失以支持梯度累积
+            loss = loss / self.config.training.gradient_accumulation_steps
             loss.backward()
             
-            # 梯度裁剪
-            if self.config.training.gradient_clip_val > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    self.config.training.gradient_clip_val
-                )
+            # 梯度累积
+            if (batch_idx + 1) % self.config.training.gradient_accumulation_steps == 0:
+                # 梯度裁剪
+                if self.config.training.gradient_clipping:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
                 
-            self.optimizer.step()
-            total_loss += loss.item()
+                self.optimizer.step()
+                self.optimizer.zero_grad()
             
-            # 计算准确率（误差在10%以内算正确）
-            relative_error = torch.abs(output - target) / torch.abs(target)
-            correct = (relative_error <= 0.1).float().mean()
+            # 累积统计信息
+            total_loss += loss.item() * self.config.training.gradient_accumulation_steps
+            total_mae += mae.item()
             total_correct += correct.item() * target.size(0)
             total_samples += target.size(0)
+            batch_count += 1
             
-            # 记录训练指标
+            # 打印训练进度
             if batch_idx % self.config.logging.log_every_n_steps == 0:
-                self.logger.log_metrics(
-                    {
-                        'train_loss': loss.item(),
-                        'temperature_mae': torch.mean(torch.abs(output - target)).item(),
-                        'train_accuracy': correct.item()
-                    },
-                    self.current_epoch * len(self.train_loader) + batch_idx
-                )
-                
-        return total_loss / len(self.train_loader), total_correct / total_samples
+                metrics = {
+                    'loss': loss.item() * self.config.training.gradient_accumulation_steps,
+                    'mae': mae.item(),
+                    'accuracy': correct.item(),
+                    'prediction': output[0].item(),  # 第一个样本的预测值
+                    'target': target[0].item()      # 第一个样本的真实值
+                }
+                self.logger.log_metrics(metrics, batch_idx)
+        
+        # 计算平均指标
+        avg_loss = total_loss / batch_count
+        avg_mae = total_mae / batch_count
+        avg_accuracy = total_correct / total_samples
+        
+        return avg_loss, avg_mae, avg_accuracy
     
-    def validate(self) -> Tuple[float, float]:
+    def validate(self):
         """验证模型"""
         self.model.eval()
         total_loss = 0
@@ -134,31 +154,28 @@ class Trainer:
             for data, target in self.val_loader:
                 data, target = data.to(self.device), target.to(self.device)
                 output = self.model(data)
-                loss = self.criterion(output, target)
-                total_loss += loss.item()
-                total_mae += torch.mean(torch.abs(output - target)).item()
                 
-                # 计算准确率（误差在10%以内算正确）
-                relative_error = torch.abs(output - target) / torch.abs(target)
-                correct = (relative_error <= 0.1).float().mean()
+                # 计算损失
+                loss = self.criterion(output, target)
+                
+                # 计算MAE
+                mae = torch.mean(torch.abs(output - target))
+                
+                # 计算准确率（误差在20%以内算正确）
+                relative_error = torch.abs(output - target) / (torch.abs(target) + 1e-6)
+                correct = (relative_error <= 0.2).float().mean()
+                
+                total_loss += loss.item()
+                total_mae += mae.item()
                 total_correct += correct.item() * target.size(0)
                 total_samples += target.size(0)
-                
+        
+        # 计算平均指标
         avg_loss = total_loss / len(self.val_loader)
         avg_mae = total_mae / len(self.val_loader)
-        accuracy = total_correct / total_samples
+        avg_accuracy = total_correct / total_samples
         
-        # 记录验证指标
-        self.logger.log_metrics(
-            {
-                'val_loss': avg_loss,
-                'temperature_mae': avg_mae,
-                'val_accuracy': accuracy
-            },
-            self.current_epoch
-        )
-                
-        return avg_loss, accuracy
+        return avg_loss, avg_mae, avg_accuracy
     
     def save_checkpoint(self, is_interrupted: bool = False):
         """保存检查点"""
@@ -236,31 +253,43 @@ class Trainer:
                 self.current_epoch = epoch
                 
                 # 训练一个epoch
-                train_loss, train_accuracy = self.train_epoch()
+                train_loss, train_mae, train_accuracy = self.train_epoch()
                 self.train_losses.append(train_loss)
                 
                 # 验证
                 if epoch % self.config.logging.val_every_n_epochs == 0:
-                    val_loss, val_accuracy = self.validate()
+                    val_loss, val_mae, val_accuracy = self.validate()
                     self.val_losses.append(val_loss)
                     
-                    # 更新学习率
-                    if self.config.training.use_lr_scheduler:
-                        self.scheduler.step(val_loss)
-                        
-                    # 记录epoch结果
+                    # 更新学习率调度器
+                    if self.scheduler is not None:
+                        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                            self.scheduler.step(val_loss)  # 使用验证损失来调整学习率
+                        else:
+                            self.scheduler.step()
+                    
+                    # 保存最佳模型
+                    if val_loss < self.best_val_loss:
+                        self.best_val_loss = val_loss
+                        self.save_checkpoint(is_best=True)
+                        self.logger.log_info(f"保存最佳模型，验证损失: {val_loss:.4f}")
+                    
+                    # 记录训练和验证指标
                     self.logger.log_epoch(
                         epoch,
-                        {'loss': train_loss, 'accuracy': train_accuracy},
-                        {'loss': val_loss, 'accuracy': val_accuracy}
+                        {'loss': train_loss, 'mae': train_mae, 'accuracy': train_accuracy},
+                        {'loss': val_loss, 'mae': val_mae, 'accuracy': val_accuracy}
                     )
-                    
-                    # 保存检查点
+                
+                # 保存最新模型
+                if self.config.logging.save_latest_model:
                     self.save_checkpoint()
-                    
-                # 可视化训练过程
-                if epoch % self.config.logging.plot_every_n_epochs == 0:
-                    self.visualize_training()
+                
+                # 早停检查
+                if self.config.training.early_stopping:
+                    if self.early_stopping_counter >= self.config.training.early_stopping_patience:
+                        self.logger.log_info("触发早停机制，停止训练")
+                        break
                     
         except KeyboardInterrupt:
             self.logger.log_warning("训练被中断")
