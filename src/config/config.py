@@ -138,6 +138,9 @@ class LoggingConfig:
     save_latest_model: bool = True  # 是否保存最新模型
     save_best_model: bool = True    # 是否保存最佳模型
     best_model_metric: str = "val_loss"  # 用于判断最佳模型的指标
+    
+    # 新增参数
+    save_frequency: int = 5  # 每多少个epoch保存一次检查点
 
 @dataclass
 class Config:
