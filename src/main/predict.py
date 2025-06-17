@@ -133,9 +133,30 @@ def main():
         logger.log_info(f"预测结果统计:")
         logger.log_info(f"总样本数: {len(df)}")
         logger.log_info(f"有效预测数: {len(valid_predictions)}")
-        logger.log_info(f"预测温度范围: {valid_predictions.min():.2f}°C 到 {valid_predictions.max():.2f}°C")
-        logger.log_info(f"预测温度均值: {valid_predictions.mean():.2f}°C")
-        logger.log_info(f"预测温度标准差: {valid_predictions.std():.2f}°C")
+        
+        # 转换回实际温度值
+        actual_predictions = data_processor.inverse_transform(
+            np.column_stack([valid_predictions.values, np.zeros((len(valid_predictions), 9))])
+        )[:, 0]  # 只取温度列
+        
+        logger.log_info(f"标准化后的预测温度范围: {valid_predictions.min():.2f}°C 到 {valid_predictions.max():.2f}°C")
+        logger.log_info(f"标准化后的预测温度均值: {valid_predictions.mean():.2f}°C")
+        logger.log_info(f"标准化后的预测温度标准差: {valid_predictions.std():.2f}°C")
+        
+        logger.log_info(f"实际预测温度范围: {actual_predictions.min():.2f}°C 到 {actual_predictions.max():.2f}°C")
+        logger.log_info(f"实际预测温度均值: {actual_predictions.mean():.2f}°C")
+        logger.log_info(f"实际预测温度标准差: {actual_predictions.std():.2f}°C")
+        
+        # 计算预测误差
+        actual_temperatures = df['Temperature (C)'].iloc[config.data.sequence_length:].values
+        mae = np.mean(np.abs(actual_predictions - actual_temperatures))
+        mse = np.mean((actual_predictions - actual_temperatures) ** 2)
+        rmse = np.sqrt(mse)
+        
+        logger.log_info(f"预测误差统计:")
+        logger.log_info(f"平均绝对误差 (MAE): {mae:.2f}°C")
+        logger.log_info(f"均方误差 (MSE): {mse:.2f}°C")
+        logger.log_info(f"均方根误差 (RMSE): {rmse:.2f}°C")
         
     except Exception as e:
         logger.log_error(f"预测过程中出现错误: {str(e)}")
