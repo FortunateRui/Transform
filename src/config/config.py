@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import torch
 import os
 
@@ -9,97 +9,70 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 @dataclass
 class DataConfig:
     """数据配置"""
-    # 数据路径
-    data_path: str = os.path.join(ROOT_DIR, "data", "weather.csv")
-    
-    # 时间特征
+    # 数据文件路径
+    data_path: str = "data/weather.csv"
+    # 时间列名
     time_column: str = "Formatted Date"
-    
-    # 输入特征（根据README说明选择）
-    input_features: List[str] = (
-        # 数值型特征
-        "Temperature (C)",        # 温度
-        "Apparent Temperature (C)", # 体感温度
-        "Humidity",              # 湿度
-        "Wind Speed (km/h)"      # 风速
+    # 输入特征
+    input_features: Tuple[str, ...] = (
+        "Temperature (C)",
+        "Apparent Temperature (C)",
+        "Humidity",
+        "Wind Speed (km/h)"
     )
-    
-    # 分类特征（根据README说明）
-    categorical_features: List[str] = ()  # 不再使用分类特征
-    
-    # 目标特征（预测目标）
-    target_features: List[str] = (
-        "Temperature (C)"        # 只预测温度
-    )
-    
-    # 时间序列参数
-    sequence_length: int = 24  # 使用过去24个时间点的数据
-    prediction_length: int = 1  # 预测未来1个时间点
-    
-    # 数据划分比例
-    train_ratio: float = 0.7
-    val_ratio: float = 0.15
-    test_ratio: float = 0.15
-    
-    # 数据标准化
+    # 目标特征
+    target_features: Tuple[str, ...] = ("Temperature (C)",)
+    # 序列长度
+    sequence_length: int = 24
+    # 预测长度
+    prediction_length: int = 1
+    # 是否标准化
     normalize: bool = True
-    
-    # 批处理大小
-    batch_size: int = 64
+    # 训练集比例
+    train_ratio: float = 0.7
+    # 验证集比例
+    val_ratio: float = 0.15
+    # 测试集比例
+    test_ratio: float = 0.15
 
 @dataclass
 class ModelConfig:
     """模型配置"""
-    # 输入维度（特征数量）
-    input_dim: int = 4  # 4个数值特征
-    
+    # 输入特征维度
+    input_dim: int = 4
     # 模型维度
-    d_model: int = 512  # 减小模型维度
-    
-    # 注意力头数
-    nhead: int = 8  # 减小注意力头数
-    
-    # 编码器层数
-    num_encoder_layers: int = 6  # 减少编码器层数
-    
+    d_model: int = 512
     # 前馈网络维度
-    dim_feedforward: int = 2048  # 减小前馈网络维度
-    
+    d_ff: int = 2048
+    # 编码器层数
+    n_layers: int = 3
     # Dropout比率
     dropout: float = 0.1
-    
-    # 预测长度
-    prediction_length: int = 1
+    # 激活函数
+    activation: str = "relu"
+    # 输出维度
+    output_dim: int = 1
 
 @dataclass
 class TrainingConfig:
     """训练配置"""
-    # 随机种子
-    seed: int = 42
-    
-    # 设备
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    
+    # 训练设备
+    device: str = field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
     # 训练轮数
-    epochs: int = 200
-    
+    epochs: int = 100
     # 学习率
-    learning_rate: float = 5e-5
-    
-    # 学习率调度器
-    use_lr_scheduler: bool = True
-    scheduler_patience: int = 5
-    scheduler_factor: float = 0.5
-    
-    # 早停
-    early_stopping: bool = True
-    early_stopping_patience: int = 15
-    
-    # 梯度裁剪
-    gradient_clip_val: float = 1.0
-    
+    learning_rate: float = 0.001
     # 权重衰减
     weight_decay: float = 0.01
+    # 批次大小
+    batch_size: int = 32
+    # 是否使用学习率调度器
+    use_lr_scheduler: bool = True
+    # 学习率调度器参数
+    scheduler_factor: float = 0.5
+    scheduler_patience: int = 5
+    # 随机种子
+    seed: int = 42
 
 @dataclass
 class LoggingConfig:
@@ -138,20 +111,27 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     
     def __post_init__(self):
-        """配置验证"""
-        # 确保数据划分比例之和为1
+        """初始化后的检查"""
+        # 检查数据路径
+        assert os.path.exists(self.data.data_path), f"数据文件不存在: {self.data.data_path}"
+        
+        # 检查数据划分比例
         assert abs(self.data.train_ratio + self.data.val_ratio + self.data.test_ratio - 1.0) < 1e-6, \
-            "数据划分比例之和必须为1"
+            "训练集、验证集和测试集的比例之和必须为1"
         
-        # 确保序列长度合理
-        assert self.data.sequence_length > 0, "序列长度必须大于0"
-        assert self.data.prediction_length > 0, "预测长度必须大于0"
+        # 检查模型参数
+        assert self.model.input_dim == len(self.data.input_features), \
+            f"模型输入维度 ({self.model.input_dim}) 与输入特征数量 ({len(self.data.input_features)}) 不匹配"
+        assert self.model.output_dim == len(self.data.target_features), \
+            f"模型输出维度 ({self.model.output_dim}) 与目标特征数量 ({len(self.data.target_features)}) 不匹配"
         
-        # 确保批处理大小合理
-        assert self.data.batch_size > 0, "批处理大小必须大于0"
+        # 检查训练参数
+        assert self.training.batch_size > 0, "batch_size必须大于0"
+        assert self.training.learning_rate > 0, "learning_rate必须大于0"
+        assert self.training.epochs > 0, "epochs必须大于0"
         
-        # 确保模型参数合理
-        assert self.model.d_model > 0, "模型维度必须大于0"
-        assert self.model.nhead > 0, "注意力头数必须大于0"
-        assert self.model.num_encoder_layers > 0, "编码器层数必须大于0"
-        assert 0 <= self.model.dropout <= 1, "Dropout比率必须在0到1之间" 
+        # 创建必要的目录
+        os.makedirs(self.logging.model_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.logging.model_dir, "save"), exist_ok=True)
+        os.makedirs(os.path.join(self.logging.model_dir, "logs"), exist_ok=True)
+        os.makedirs(os.path.join(self.logging.model_dir, "plots"), exist_ok=True) 

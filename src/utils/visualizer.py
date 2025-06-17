@@ -14,7 +14,10 @@ class Visualizer:
         """Initialize visualizer"""
         self.config = config
         self.logger = logger
-        self.plot_dir = logger.get_log_dir()
+        self.log_dir = logger.log_dir
+        
+        # 创建图表保存目录
+        self.plot_dir = os.path.join(self.log_dir, 'plots')
         os.makedirs(self.plot_dir, exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -122,4 +125,51 @@ class Visualizer:
         # 保存图表
         save_path = os.path.join(self.plot_dir, f"temperature_prediction_{self.timestamp}.png")
         plt.savefig(save_path)
+        plt.close()
+
+    def plot_training_curves(self, train_losses, val_losses, train_accuracies, val_accuracies):
+        """绘制训练曲线"""
+        plt.figure(figsize=(12, 5))
+        
+        # 绘制损失曲线
+        plt.subplot(1, 2, 1)
+        plt.plot(train_losses, label='训练损失')
+        plt.plot(val_losses, label='验证损失')
+        plt.title('损失曲线')
+        plt.xlabel('Epoch')
+        plt.ylabel('损失')
+        plt.legend()
+        plt.grid(True)
+        
+        # 绘制准确率曲线
+        plt.subplot(1, 2, 2)
+        plt.plot(train_accuracies, label='训练准确率')
+        plt.plot(val_accuracies, label='验证准确率')
+        plt.title('准确率曲线')
+        plt.xlabel('Epoch')
+        plt.ylabel('准确率')
+        plt.legend()
+        plt.grid(True)
+        
+        # 保存图表
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.plot_dir, 'training_curves.png'))
+        plt.close()
+    
+    def plot_error_distribution(self, errors):
+        """绘制误差分布"""
+        plt.figure(figsize=(10, 6))
+        plt.hist(errors, bins=50, density=True)
+        plt.title('预测误差分布')
+        plt.xlabel('相对误差')
+        plt.ylabel('频率')
+        plt.grid(True)
+        
+        # 添加8%误差线
+        plt.axvline(x=0.08, color='r', linestyle='--', label='8%误差线')
+        plt.axvline(x=-0.08, color='r', linestyle='--')
+        plt.legend()
+        
+        # 保存图表
+        plt.savefig(os.path.join(self.plot_dir, 'error_distribution.png'))
         plt.close() 

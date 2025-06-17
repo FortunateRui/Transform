@@ -1,124 +1,251 @@
 import os
-import argparse
 import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 import numpy as np
-import random
-import torch.optim as optim
-from ..config.config import Config
-from ..models.time_series_transformer import TimeSeriesTransformer
-from ..utils.data_processor import DataProcessor
-from ..utils.logger import Logger
-from ..utils.visualizer import Visualizer
-from ..utils.trainer import Trainer
-from datetime import datetime
+from tqdm import tqdm
+import sys
+from typing import Tuple
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def set_seed(seed: int):
-    """设置随机种子以确保可重复性"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
+from src.config.config import Config
+from src.models.time_series_transformer import TimeSeriesTransformer
+from src.utils.data_processor import DataProcessor
+from src.utils.logger import Logger
+from src.utils.visualizer import Visualizer
 
-def parse_args():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(description='Train the model')
-    parser.add_argument('--resume', type=str, help='Path to checkpoint to resume from (e.g., 20250615_210905/latest_model)')
-    return parser.parse_args()
+def train_epoch(
+    model: TimeSeriesTransformer,
+    train_loader: DataLoader,
+    criterion: nn.Module,
+    optimizer: AdamW,
+    device: str,
+    logger: Logger
+) -> Tuple[float, float]:
+    """
+    训练一个epoch
+    Args:
+        model: 模型
+        train_loader: 训练数据加载器
+        criterion: 损失函数
+        optimizer: 优化器
+        device: 设备
+        logger: 日志器
+    Returns:
+        train_loss: 训练损失
+        train_accuracy: 训练准确率
+    """
+    model.train()
+    total_loss = 0
+    total_samples = 0
+    correct_predictions = 0
+    
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        
+        # 前向传播
+        output = model(data)  # [B, L, 1]
+        
+        # 只使用最后一个时间步的预测
+        output = output[:, -1, :]  # [B, 1]
+        
+        # 计算损失
+        loss = criterion(output, target)
+        
+        # 反向传播
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        # 计算准确率（相对误差小于8%视为正确）
+        with torch.no_grad():
+            relative_error = torch.abs(output - target) / torch.abs(target)
+            correct_predictions += (relative_error <= 0.08).sum().item()
+        
+        # 更新统计信息
+        total_loss += loss.item() * len(data)
+        total_samples += len(data)
+        
+        # 打印进度
+        if batch_idx % 100 == 0:
+            logger.log_info(f"训练进度: {batch_idx}/{len(train_loader)}")
+    
+    # 计算平均损失和准确率
+    train_loss = total_loss / total_samples
+    train_accuracy = correct_predictions / total_samples
+    
+    return train_loss, train_accuracy
+
+def validate(
+    model: TimeSeriesTransformer,
+    val_loader: DataLoader,
+    criterion: nn.Module,
+    device: str,
+    logger: Logger
+) -> Tuple[float, float]:
+    """验证模型"""
+    model.eval()
+    total_loss = 0
+    correct_predictions = 0
+    total_samples = 0
+    all_errors = []
+    
+    with torch.no_grad():
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            output = output[:, -1, :]  # 只使用最后一个时间步的预测
+            
+            # 计算损失
+            loss = criterion(output, target)
+            total_loss += loss.item() * len(data)
+            
+            # 计算准确率（相对误差小于8%视为正确）
+            relative_error = torch.abs(output - target) / torch.abs(target)
+            correct_predictions += (relative_error <= 0.08).sum().item()
+            total_samples += len(data)
+            
+            # 收集误差
+            all_errors.extend(relative_error.cpu().numpy().flatten())
+    
+    # 计算平均损失和准确率
+    val_loss = total_loss / total_samples
+    val_accuracy = correct_predictions / total_samples
+    
+    return val_loss, val_accuracy, all_errors
 
 def main():
-    # 解析命令行参数
-    args = parse_args()
+    # 设置随机种子
+    torch.manual_seed(42)
+    np.random.seed(42)
+    
+    # 创建配置
+    config = Config()
+    
+    # 创建日志记录器
+    logger = Logger(config)
+    logger.log_info("开始训练过程...")
     
     try:
-        # 加载配置
-        config = Config()
-        logger = Logger(config)
+        # 创建数据处理器
+        data_processor = DataProcessor(config)
         
-        # 设置随机种子
-        set_seed(config.training.seed)
+        # 加载和预处理数据
+        logger.log_info("加载和预处理数据...")
+        df = data_processor.load_data()
+        data, preprocess_info = data_processor.preprocess_data(df)
+        
+        # 准备序列数据
+        logger.log_info("准备序列数据...")
+        train_dataset, val_dataset, test_dataset = data_processor.create_datasets(data)
+        
+        # 创建数据加载器
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config.training.batch_size,
+            shuffle=True
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=config.training.batch_size,
+            shuffle=False
+        )
         
         # 创建模型
-        model = TimeSeriesTransformer(
-            input_dim=config.model.input_dim,
-            d_model=config.model.d_model,
-            nhead=config.model.nhead,
-            num_encoder_layers=config.model.num_encoder_layers,
-            dim_feedforward=config.model.dim_feedforward,
-            dropout=config.model.dropout,
-            prediction_length=config.model.prediction_length
-        )
-        model.to(config.training.device)
+        logger.log_info("创建模型...")
+        model = TimeSeriesTransformer(config)
+        model = model.to(config.training.device)
         
-        # 创建优化器
-        optimizer = optim.Adam(
+        # 创建损失函数和优化器
+        criterion = nn.MSELoss()
+        optimizer = AdamW(
             model.parameters(),
             lr=config.training.learning_rate,
             weight_decay=config.training.weight_decay
         )
-        
-        # 创建学习率调度器
-        scheduler = None
-        if config.training.use_lr_scheduler:
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode='min',
-                factor=config.training.scheduler_factor,
-                patience=config.training.scheduler_patience
-            )
-        
-        # 创建数据加载器
-        data_processor = DataProcessor(config)
-        train_loader, val_loader, test_loader = data_processor.prepare_data()
+        scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=config.training.epochs,
+            eta_min=config.training.learning_rate * 0.1
+        )
         
         # 创建可视化器
         visualizer = Visualizer(config, logger)
         
-        # 创建训练器
-        trainer = Trainer(
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            test_loader=test_loader,
-            config=config,
-            logger=logger,
-            visualizer=visualizer
-        )
+        # 训练循环
+        logger.log_info("开始训练...")
+        best_val_loss = float('inf')
+        train_losses = []
+        val_losses = []
+        train_accuracies = []
+        val_accuracies = []
         
-        # 设置优化器和调度器
-        trainer.optimizer = optimizer
-        trainer.scheduler = scheduler
-        
-        # 设置模型保存目录
-        if args.resume:
-            # 从指定检查点恢复
-            checkpoint_path = os.path.join(config.logging.model_dir, args.resume + ".pth")
-            if not os.path.exists(checkpoint_path):
-                raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        for epoch in range(config.training.epochs):
+            logger.log_info(f"\nEpoch {epoch + 1}/{config.training.epochs}")
             
-            # 加载检查点
-            checkpoint = torch.load(checkpoint_path)
-            trainer.model.load_state_dict(checkpoint['model_state_dict'])
-            trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            if trainer.scheduler and 'scheduler_state_dict' in checkpoint:
-                trainer.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            start_epoch = checkpoint['epoch'] + 1
-            trainer.train_losses = checkpoint['train_losses']
-            trainer.val_losses = checkpoint['val_losses']
-            trainer.best_val_loss = checkpoint['best_val_loss']
-            logger.log_info(f"Resumed from checkpoint: {checkpoint_path}")
+            # 训练
+            train_loss, train_accuracy = train_epoch(
+                model, train_loader, criterion, optimizer,
+                config.training.device, logger
+            )
             
-            # 创建新的时间戳目录
-            trainer.model_save_dir = os.path.join(config.logging.model_dir, datetime.now().strftime("%Y%m%d_%H%M%S"))
-            os.makedirs(trainer.model_save_dir, exist_ok=True)
-        else:
-            # 创建新的时间戳目录
-            trainer.model_save_dir = os.path.join(config.logging.model_dir, datetime.now().strftime("%Y%m%d_%H%M%S"))
-            os.makedirs(trainer.model_save_dir, exist_ok=True)
-            start_epoch = 0
+            # 验证
+            val_loss, val_accuracy, val_errors = validate(
+                model, val_loader, criterion,
+                config.training.device, logger
+            )
+            
+            # 更新学习率
+            scheduler.step()
+            
+            # 记录指标
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            train_accuracies.append(train_accuracy)
+            val_accuracies.append(val_accuracy)
+            
+            # 记录日志
+            logger.log_info(
+                f"Epoch {epoch + 1} - "
+                f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, "
+                f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}"
+            )
+            
+            # 保存最新模型
+            latest_model_path = os.path.join(logger.model_dir, "latest_model.pth")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+            }, latest_model_path)
+            
+            # 保存最佳模型
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model_path = os.path.join(logger.model_dir, "best_model.pth")
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                }, best_model_path)
+                logger.log_info("保存最佳模型")
+            
+            # 可视化训练过程
+            visualizer.plot_training_curves(
+                train_losses, val_losses,
+                train_accuracies, val_accuracies
+            )
+            
+            # 绘制误差分布
+            visualizer.plot_error_distribution(val_errors)
         
-        # 开始训练
-        trainer.train(start_epoch=start_epoch)
+        logger.log_info("训练完成！")
         
     except Exception as e:
         logger.log_error(f"训练过程中出现错误: {str(e)}")

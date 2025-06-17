@@ -62,6 +62,7 @@ class DataProcessor:
         # 标准化数值型特征
         if self.config.data.normalize:
             data = self.scaler.fit_transform(data)
+            print(f"特征标准化完成，特征均值: {self.scaler.mean_}, 标准差: {self.scaler.scale_}")
             
         return data, {"scaler": self.scaler}
     
@@ -76,6 +77,11 @@ class DataProcessor:
         train_data = data[:train_size]
         val_data = data[train_size:train_size + val_size]
         test_data = data[train_size + val_size:]
+        
+        print(f"数据集划分完成:")
+        print(f"训练集: {len(train_data)} 样本")
+        print(f"验证集: {len(val_data)} 样本")
+        print(f"测试集: {len(test_data)} 样本")
         
         # 创建数据集
         train_dataset = WeatherDataset(
@@ -105,17 +111,17 @@ class DataProcessor:
         """创建数据加载器"""
         train_loader = DataLoader(
             train_dataset,
-            batch_size=self.config.data.batch_size,
+            batch_size=self.config.training.batch_size,
             shuffle=True
         )
         val_loader = DataLoader(
             val_dataset,
-            batch_size=self.config.data.batch_size,
+            batch_size=self.config.training.batch_size,
             shuffle=False
         )
         test_loader = DataLoader(
             test_dataset,
-            batch_size=self.config.data.batch_size,
+            batch_size=self.config.training.batch_size,
             shuffle=False
         )
         
