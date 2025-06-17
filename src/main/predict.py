@@ -121,7 +121,14 @@ def main():
         # 将预测结果添加到DataFrame中
         logger.log_info("将预测结果添加到数据中...")
         df['prediction_temperature'] = np.nan
-        df.loc[config.data.sequence_length:, 'prediction_temperature'] = predictions
+        
+        # 转换回实际温度值
+        actual_predictions = data_processor.inverse_transform(
+            np.column_stack([predictions, np.zeros((len(predictions), 9))])
+        )[:, 0]  # 只取温度列
+        
+        # 填充实际温度值
+        df.loc[config.data.sequence_length:, 'prediction_temperature'] = actual_predictions
         
         # 保存结果
         logger.log_info("保存预测结果...")
@@ -134,18 +141,9 @@ def main():
         logger.log_info(f"总样本数: {len(df)}")
         logger.log_info(f"有效预测数: {len(valid_predictions)}")
         
-        # 转换回实际温度值
-        actual_predictions = data_processor.inverse_transform(
-            np.column_stack([valid_predictions.values, np.zeros((len(valid_predictions), 9))])
-        )[:, 0]  # 只取温度列
-        
-        logger.log_info(f"标准化后的预测温度范围: {valid_predictions.min():.2f}°C 到 {valid_predictions.max():.2f}°C")
-        logger.log_info(f"标准化后的预测温度均值: {valid_predictions.mean():.2f}°C")
-        logger.log_info(f"标准化后的预测温度标准差: {valid_predictions.std():.2f}°C")
-        
-        logger.log_info(f"实际预测温度范围: {actual_predictions.min():.2f}°C 到 {actual_predictions.max():.2f}°C")
-        logger.log_info(f"实际预测温度均值: {actual_predictions.mean():.2f}°C")
-        logger.log_info(f"实际预测温度标准差: {actual_predictions.std():.2f}°C")
+        logger.log_info(f"预测温度范围: {valid_predictions.min():.2f}°C 到 {valid_predictions.max():.2f}°C")
+        logger.log_info(f"预测温度均值: {valid_predictions.mean():.2f}°C")
+        logger.log_info(f"预测温度标准差: {valid_predictions.std():.2f}°C")
         
         # 计算预测误差
         actual_temperatures = df['Temperature (C)'].iloc[config.data.sequence_length:].values
