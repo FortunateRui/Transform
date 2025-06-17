@@ -16,7 +16,7 @@ class Visualizer:
         self.logger = logger
         self.log_dir = logger.log_dir
         
-        # 创建图表保存目录
+        # Create plot directory
         self.plot_dir = os.path.join(self.log_dir, 'plots')
         os.makedirs(self.plot_dir, exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -50,7 +50,7 @@ class Visualizer:
     def plot_metrics(
         self,
         metrics: Dict[str, List[float]],
-        title: str = "训练指标"
+        title: str = "Training Metrics"
     ):
         """绘制多个指标曲线"""
         plt.figure(figsize=(12, 6))
@@ -61,7 +61,7 @@ class Visualizer:
             
         plt.title(title)
         plt.xlabel('Epoch')
-        plt.ylabel('值')
+        plt.ylabel('Value')
         plt.legend()
         plt.grid(True)
         
@@ -128,48 +128,48 @@ class Visualizer:
         plt.close()
 
     def plot_training_curves(self, train_losses, val_losses, train_accuracies, val_accuracies):
-        """绘制训练曲线"""
+        """Plot training curves"""
         plt.figure(figsize=(12, 5))
         
-        # 绘制损失曲线
+        # Plot loss curves
         plt.subplot(1, 2, 1)
-        plt.plot(train_losses, label='训练损失')
-        plt.plot(val_losses, label='验证损失')
-        plt.title('损失曲线')
+        plt.plot(train_losses, label='Train Loss')
+        plt.plot(val_losses, label='Val Loss')
+        plt.title('Loss Curves')
         plt.xlabel('Epoch')
-        plt.ylabel('损失')
+        plt.ylabel('Loss')
         plt.legend()
         plt.grid(True)
         
-        # 绘制准确率曲线
+        # Plot accuracy curves
         plt.subplot(1, 2, 2)
-        plt.plot(train_accuracies, label='训练准确率')
-        plt.plot(val_accuracies, label='验证准确率')
-        plt.title('准确率曲线')
+        plt.plot(train_accuracies, label='Train Accuracy')
+        plt.plot(val_accuracies, label='Val Accuracy')
+        plt.title('Accuracy Curves')
         plt.xlabel('Epoch')
-        plt.ylabel('准确率')
+        plt.ylabel('Accuracy')
         plt.legend()
         plt.grid(True)
         
-        # 保存图表
+        # Save plot
         plt.tight_layout()
         plt.savefig(os.path.join(self.plot_dir, 'training_curves.png'))
         plt.close()
     
     def plot_error_distribution(self, errors):
-        """绘制误差分布"""
+        """Plot error distribution"""
         plt.figure(figsize=(10, 6))
         plt.hist(errors, bins=50, density=True)
-        plt.title('预测误差分布')
-        plt.xlabel('相对误差')
-        plt.ylabel('频率')
+        plt.title('Prediction Error Distribution')
+        plt.xlabel('Relative Error')
+        plt.ylabel('Frequency')
         plt.grid(True)
         
-        # 添加8%误差线
-        plt.axvline(x=0.08, color='r', linestyle='--', label='8%误差线')
+        # Add 8% error lines
+        plt.axvline(x=0.08, color='r', linestyle='--', label='8% Error Line')
         plt.axvline(x=-0.08, color='r', linestyle='--')
         plt.legend()
         
-        # 保存图表
+        # Save plot
         plt.savefig(os.path.join(self.plot_dir, 'error_distribution.png'))
         plt.close() 
