@@ -124,8 +124,8 @@ def main():
         
         # 转换回实际温度值
         actual_predictions = data_processor.inverse_transform(
-            np.column_stack([predictions, np.zeros((len(predictions), 9))])
-        )[:, 0]  # 只取温度列
+            predictions.reshape(-1, 1)  # 将预测结果重塑为2D数组
+        ).flatten()  # 转换回1D数组
         
         # 填充实际温度值
         df.loc[config.data.sequence_length:, 'prediction_temperature'] = actual_predictions
