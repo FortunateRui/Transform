@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from tqdm import tqdm
+import argparse
 from ..config.config import Config
 from ..models.time_series_transformer import TimeSeriesTransformer
 from ..utils.data_processor import DataProcessor
@@ -11,15 +12,7 @@ from ..utils.logger import Logger
 
 def load_model(config: Config, model_path: str) -> TimeSeriesTransformer:
     """加载模型"""
-    model = TimeSeriesTransformer(
-        input_dim=config.model.input_dim,
-        d_model=config.model.d_model,
-        nhead=config.model.nhead,
-        num_encoder_layers=config.model.num_encoder_layers,
-        dim_feedforward=config.model.dim_feedforward,
-        dropout=config.model.dropout,
-        prediction_length=config.model.prediction_length
-    )
+    model = TimeSeriesTransformer(config)
     
     # 加载模型权重
     checkpoint = torch.load(model_path, map_location=config.training.device)
@@ -64,15 +57,16 @@ def predict_temperature(
             
             # 预测
             output = model(x)
-            predictions.append(output.cpu().numpy()[0, 0])  # 只取温度预测值
-            
-            # # 每1000个样本记录一次进度
-            # if (i - sequence_length) % 1000 == 0:
-            #     logger.log_info(f"已处理 {i - sequence_length}/{total_samples} 个样本")
+            predictions.append(output.cpu().numpy()[0, -1, 0])  # 只取最后一个时间步的温度预测值
     
     return np.array(predictions)
 
 def main():
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='使用训练好的模型进行预测')
+    parser.add_argument('--model', type=str, required=True, help='要使用的模型路径（相对于pth/目录，例如：20240617_123456/latest_model.pth）')
+    args = parser.parse_args()
+    
     # 创建配置
     config = Config()
     
@@ -103,7 +97,9 @@ def main():
         
         # 加载模型
         logger.log_info("加载模型...")
-        model_path = os.path.join(config.logging.model_dir, "predict", "model.pth")
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        model_path = os.path.join(project_root, 'pth', args.model)
         model = load_model(config, model_path)
         logger.log_info("模型加载完成")
         
