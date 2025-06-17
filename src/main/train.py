@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 import sys
 import signal
+import argparse
 from typing import Tuple, List
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -66,6 +67,16 @@ def save_latest_model(model, optimizer, epoch, train_loss, val_loss, logger):
         'train_loss': train_loss,
         'val_loss': val_loss,
     }, latest_model_path)
+
+def load_checkpoint(model, optimizer, checkpoint_path, device):
+    """加载检查点"""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    start_epoch = checkpoint['epoch'] + 1
+    train_loss = checkpoint['train_loss']
+    val_loss = checkpoint['val_loss']
+    return start_epoch, train_loss, val_loss
 
 def train_epoch(
     model: TimeSeriesTransformer,
@@ -186,6 +197,12 @@ def validate(
     return val_loss, val_accuracy, all_errors
 
 def main():
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='训练时间序列预测模型')
+    parser.add_argument('--resume', type=str, help='要加载的模型路径（相对于pth/目录，例如：20240617_123456/latest_model.pth）')
+    parser.add_argument('--epochs', type=int, help='总训练轮数，如果指定了--resume，则从当前epoch继续训练到指定的epochs')
+    args = parser.parse_args()
+    
     # 设置信号处理
     signal.signal(signal.SIGINT, signal_handler)
     
@@ -195,6 +212,10 @@ def main():
     
     # 创建配置
     config = Config()
+    
+    # 如果指定了epochs，则更新配置
+    if args.epochs:
+        config.training.epochs = args.epochs
     
     # 创建日志记录器
     logger = Logger(config)
@@ -264,7 +285,34 @@ def main():
             'logger': logger
         })
         
-        for epoch in range(config.training.epochs):
+        # 如果指定了模型路径，则加载模型
+        start_epoch = 0
+        if args.resume:
+            # 获取项目根目录
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            # 构建完整的模型路径
+            model_path = os.path.join(project_root, 'pth', args.resume)
+            if os.path.exists(model_path):
+                logger.log_info(f"从指定路径加载模型: {model_path}")
+                start_epoch, train_loss, val_loss = load_checkpoint(
+                    model, optimizer, model_path, config.training.device
+                )
+                logger.log_info(f"已加载模型，从 epoch {start_epoch} 继续训练")
+                logger.log_info(f"当前训练状态:")
+                logger.log_info(f"- 训练损失: {train_loss:.4f}")
+                logger.log_info(f"- 验证损失: {val_loss:.4f}")
+                
+                # 如果是从已有模型继续训练，重新设置学习率调度器
+                scheduler = CosineAnnealingLR(
+                    optimizer,
+                    T_max=config.training.epochs - start_epoch,  # 调整剩余的训练轮数
+                    eta_min=config.training.learning_rate * 0.1
+                )
+            else:
+                logger.log_error(f"指定的模型文件不存在: {model_path}")
+                sys.exit(1)
+        
+        for epoch in range(start_epoch, config.training.epochs):
             logger.log_info(f"\nEpoch {epoch + 1}/{config.training.epochs}")
             
             # 训练
