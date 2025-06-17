@@ -10,7 +10,6 @@ from ..utils.data_processor import DataProcessor
 from ..utils.logger import Logger
 from ..utils.visualizer import Visualizer
 from ..utils.trainer import Trainer
-from ..utils.data_processor import DataProcessor
 from datetime import datetime
 
 def set_seed(seed: int):
@@ -29,14 +28,15 @@ def parse_args():
 
 def main():
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description='Train the model')
-    parser.add_argument('--resume', type=str, help='Path to checkpoint to resume from (e.g., 20250615_210905/latest_model)')
-    args = parser.parse_args()
+    args = parse_args()
     
     try:
         # 加载配置
         config = Config()
         logger = Logger(config)
+        
+        # 设置随机种子
+        set_seed(config.training.seed)
         
         # 创建模型
         model = TimeSeriesTransformer(
@@ -53,7 +53,8 @@ def main():
         # 创建优化器
         optimizer = optim.Adam(
             model.parameters(),
-            lr=config.training.learning_rate
+            lr=config.training.learning_rate,
+            weight_decay=config.training.weight_decay
         )
         
         # 创建学习率调度器
@@ -62,8 +63,8 @@ def main():
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
                 mode='min',
-                factor=0.5,
-                patience=5
+                factor=config.training.scheduler_factor,
+                patience=config.training.scheduler_patience
             )
         
         # 创建数据加载器

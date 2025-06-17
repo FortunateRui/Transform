@@ -21,28 +21,15 @@ class DataConfig:
         "Temperature (C)",        # 温度
         "Apparent Temperature (C)", # 体感温度
         "Humidity",              # 湿度
-        "Wind Speed (km/h)",     # 风速
-        "Wind Bearing (degrees)", # 风向
-        "Visibility (km)",       # 能见度
-        "Pressure (millibars)",  # 气压
-        # 分类特征
-        "Precip Type"           # 降水类型
+        "Wind Speed (km/h)"      # 风速
     )
     
     # 分类特征（根据README说明）
-    categorical_features: List[str] = (
-        "Precip Type"  # 降水类型（rain, snow, null）
-    )
+    categorical_features: List[str] = ()  # 不再使用分类特征
     
     # 目标特征（预测目标）
     target_features: List[str] = (
-        "Temperature (C)",        # 温度
-        "Apparent Temperature (C)", # 体感温度
-        "Humidity",              # 湿度
-        "Wind Speed (km/h)",     # 风速
-        "Wind Bearing (degrees)", # 风向
-        "Visibility (km)",       # 能见度
-        "Pressure (millibars)"   # 气压
+        "Temperature (C)"        # 只预测温度
     )
     
     # 时间序列参数
@@ -64,19 +51,19 @@ class DataConfig:
 class ModelConfig:
     """模型配置"""
     # 输入维度（特征数量）
-    input_dim: int = 10  # 7个数值特征 + 3个分类特征（降水类型的独热编码）
+    input_dim: int = 4  # 4个数值特征
     
     # 模型维度
-    d_model: int = 1024
+    d_model: int = 512  # 减小模型维度
     
     # 注意力头数
-    nhead: int = 16
+    nhead: int = 8  # 减小注意力头数
     
     # 编码器层数
-    num_encoder_layers: int = 12
+    num_encoder_layers: int = 6  # 减少编码器层数
     
     # 前馈网络维度
-    dim_feedforward: int = 4096
+    dim_feedforward: int = 2048  # 减小前馈网络维度
     
     # Dropout比率
     dropout: float = 0.1

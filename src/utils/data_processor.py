@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Tuple, Dict, List
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler
 import torch
 from torch.utils.data import Dataset, DataLoader
 from ..config.config import Config
@@ -28,7 +28,6 @@ class DataProcessor:
     def __init__(self, config: Config):
         self.config = config
         self.scaler = StandardScaler()
-        self.categorical_encoders = {}  # 存储分类变量的编码器
         
     def load_data(self) -> pd.DataFrame:
         """加载数据"""
@@ -57,32 +56,14 @@ class DataProcessor:
         # 选择特征
         features = self.config.data.input_features
         
-        # 处理分类变量
-        processed_features = []
-        for feature in features:
-            if feature in self.config.data.categorical_features:
-                # 对分类变量进行独热编码
-                if feature not in self.categorical_encoders:
-                    self.categorical_encoders[feature] = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-                    encoded = self.categorical_encoders[feature].fit_transform(df[[feature]])
-                else:
-                    encoded = self.categorical_encoders[feature].transform(df[[feature]])
-                processed_features.append(encoded)
-            else:
-                # 数值型特征直接使用
-                processed_features.append(df[[feature]].values)
-        
-        # 合并所有特征
-        data = np.hstack(processed_features)
+        # 提取数值特征
+        data = df[list(features)].values  # 将特征元组转换为列表
         
         # 标准化数值型特征
         if self.config.data.normalize:
             data = self.scaler.fit_transform(data)
             
-        return data, {
-            "scaler": self.scaler,
-            "categorical_encoders": self.categorical_encoders
-        }
+        return data, {"scaler": self.scaler}
     
     def create_datasets(self, data: np.ndarray) -> Tuple[Dataset, Dataset, Dataset]:
         """创建训练、验证和测试数据集"""
@@ -145,29 +126,6 @@ class DataProcessor:
         if self.config.data.normalize:
             return self.scaler.inverse_transform(data)
         return data
-    
-    def prepare_sequences(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        准备序列数据
-        
-        参数:
-            df (pd.DataFrame): 预处理后的数据框
-            
-        返回:
-            Tuple[np.ndarray, np.ndarray]: 输入序列和目标序列
-        """
-        # 获取特征列
-        feature_columns = [col for col in df.columns if col not in ['time', 'timezone']]
-        
-        # 准备序列数据
-        X, y = [], []
-        for i in range(len(df) - self.sequence_length - self.prediction_length + 1):
-            # 输入序列
-            X.append(df[feature_columns].iloc[i:i+self.sequence_length].values)
-            # 目标序列 - 只使用温度
-            y.append(df['Temperature (C)'].iloc[i+self.sequence_length:i+self.sequence_length+self.prediction_length].values)
-            
-        return np.array(X), np.array(y)
     
     def prepare_data(self) -> Tuple[DataLoader, DataLoader, DataLoader]:
         """
