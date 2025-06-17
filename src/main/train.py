@@ -7,7 +7,8 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import numpy as np
 from tqdm import tqdm
 import sys
-from typing import Tuple
+import signal
+from typing import Tuple, List
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config.config import Config
@@ -15,6 +16,56 @@ from src.models.time_series_transformer import TimeSeriesTransformer
 from src.utils.data_processor import DataProcessor
 from src.utils.logger import Logger
 from src.utils.visualizer import Visualizer
+
+# 全局变量用于存储训练状态
+training_state = {
+    'model': None,
+    'optimizer': None,
+    'epoch': 0,
+    'train_loss': 0.0,
+    'val_loss': 0.0,
+    'logger': None
+}
+
+def signal_handler(signum, frame):
+    """处理Ctrl+C中断信号"""
+    if training_state['model'] is not None and training_state['logger'] is not None:
+        logger = training_state['logger']
+        print("\n")  # 确保提示信息在新行显示
+        logger.log_info("检测到训练中断，正在保存最新模型...")
+        
+        try:
+            # 保存最新模型
+            latest_model_path = os.path.join(logger.model_dir, "latest_model.pth")
+            torch.save({
+                'epoch': training_state['epoch'],
+                'model_state_dict': training_state['model'].state_dict(),
+                'optimizer_state_dict': training_state['optimizer'].state_dict(),
+                'train_loss': training_state['train_loss'],
+                'val_loss': training_state['val_loss'],
+            }, latest_model_path)
+            
+            logger.log_info(f"模型已保存到: {latest_model_path}")
+            logger.log_info(f"当前训练状态:")
+            logger.log_info(f"- Epoch: {training_state['epoch']}")
+            logger.log_info(f"- 训练损失: {training_state['train_loss']:.4f}")
+            logger.log_info(f"- 验证损失: {training_state['val_loss']:.4f}")
+        except Exception as e:
+            logger.log_error(f"保存模型时出错: {str(e)}")
+    
+    logger.log_info("训练已中断")
+    sys.exit(0)
+
+def save_latest_model(model, optimizer, epoch, train_loss, val_loss, logger):
+    """保存最新模型"""
+    latest_model_path = os.path.join(logger.model_dir, "latest_model.pth")
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'train_loss': train_loss,
+        'val_loss': val_loss,
+    }, latest_model_path)
 
 def train_epoch(
     model: TimeSeriesTransformer,
@@ -42,7 +93,10 @@ def train_epoch(
     total_samples = 0
     correct_predictions = 0
     
-    for batch_idx, (data, target) in enumerate(train_loader):
+    # 创建进度条
+    pbar = tqdm(train_loader, desc="训练进度", leave=True)
+    
+    for batch_idx, (data, target) in enumerate(pbar):
         data, target = data.to(device), target.to(device)
         
         # 前向传播
@@ -68,9 +122,13 @@ def train_epoch(
         total_loss += loss.item() * len(data)
         total_samples += len(data)
         
-        # 打印进度
-        if batch_idx % 100 == 0:
-            logger.log_info(f"训练进度: {batch_idx}/{len(train_loader)}")
+        # 更新进度条信息
+        current_loss = total_loss / total_samples
+        current_accuracy = correct_predictions / total_samples
+        pbar.set_postfix({
+            'loss': f'{current_loss:.4f}',
+            'acc': f'{current_accuracy:.4f}'
+        })
     
     # 计算平均损失和准确率
     train_loss = total_loss / total_samples
@@ -84,7 +142,7 @@ def validate(
     criterion: nn.Module,
     device: str,
     logger: Logger
-) -> Tuple[float, float]:
+) -> Tuple[float, float, List[float]]:
     """验证模型"""
     model.eval()
     total_loss = 0
@@ -92,8 +150,11 @@ def validate(
     total_samples = 0
     all_errors = []
     
+    # 创建进度条
+    pbar = tqdm(val_loader, desc="验证进度", leave=True)
+    
     with torch.no_grad():
-        for data, target in val_loader:
+        for data, target in pbar:
             data, target = data.to(device), target.to(device)
             output = model(data)
             output = output[:, -1, :]  # 只使用最后一个时间步的预测
@@ -109,6 +170,14 @@ def validate(
             
             # 收集误差
             all_errors.extend(relative_error.cpu().numpy().flatten())
+            
+            # 更新进度条信息
+            current_loss = total_loss / total_samples
+            current_accuracy = correct_predictions / total_samples
+            pbar.set_postfix({
+                'loss': f'{current_loss:.4f}',
+                'acc': f'{current_accuracy:.4f}'
+            })
     
     # 计算平均损失和准确率
     val_loss = total_loss / total_samples
@@ -117,6 +186,9 @@ def validate(
     return val_loss, val_accuracy, all_errors
 
 def main():
+    # 设置信号处理
+    signal.signal(signal.SIGINT, signal_handler)
+    
     # 设置随机种子
     torch.manual_seed(42)
     np.random.seed(42)
@@ -182,6 +254,16 @@ def main():
         train_accuracies = []
         val_accuracies = []
         
+        # 初始化训练状态
+        training_state.update({
+            'model': model,
+            'optimizer': optimizer,
+            'epoch': 0,
+            'train_loss': 0.0,
+            'val_loss': 0.0,
+            'logger': logger
+        })
+        
         for epoch in range(config.training.epochs):
             logger.log_info(f"\nEpoch {epoch + 1}/{config.training.epochs}")
             
@@ -206,6 +288,16 @@ def main():
             train_accuracies.append(train_accuracy)
             val_accuracies.append(val_accuracy)
             
+            # 更新训练状态
+            training_state.update({
+                'model': model,
+                'optimizer': optimizer,
+                'epoch': epoch,
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+                'logger': logger
+            })
+            
             # 记录日志
             logger.log_info(
                 f"Epoch {epoch + 1} - "
@@ -214,14 +306,7 @@ def main():
             )
             
             # 保存最新模型
-            latest_model_path = os.path.join(logger.model_dir, "latest_model.pth")
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'train_loss': train_loss,
-                'val_loss': val_loss,
-            }, latest_model_path)
+            save_latest_model(model, optimizer, epoch, train_loss, val_loss, logger)
             
             # 保存最佳模型
             if val_loss < best_val_loss:

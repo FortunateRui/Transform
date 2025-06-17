@@ -23,9 +23,9 @@ class Logger:
         self.logger = logging.getLogger('TrainingLogger')
         self.logger.setLevel(logging.INFO)
         
-        # 创建文件处理器
+        # 创建文件处理器，指定UTF-8编码
         log_file = os.path.join(self.log_dir, 'training.log')
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.INFO)
         
         # 创建控制台处理器

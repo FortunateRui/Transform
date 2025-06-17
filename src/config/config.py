@@ -130,8 +130,6 @@ class Config:
         assert self.training.learning_rate > 0, "learning_rate必须大于0"
         assert self.training.epochs > 0, "epochs必须大于0"
         
-        # 创建必要的目录
-        os.makedirs(self.logging.model_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.logging.model_dir, "save"), exist_ok=True)
-        os.makedirs(os.path.join(self.logging.model_dir, "logs"), exist_ok=True)
-        os.makedirs(os.path.join(self.logging.model_dir, "plots"), exist_ok=True) 
+        # 创建基础目录
+        os.makedirs(self.logging.log_dir, exist_ok=True)
+        os.makedirs(self.logging.model_dir, exist_ok=True) 
