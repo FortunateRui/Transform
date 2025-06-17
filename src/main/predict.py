@@ -66,9 +66,9 @@ def predict_temperature(
             output = model(x)
             predictions.append(output.cpu().numpy()[0, 0])  # 只取温度预测值
             
-            # 每1000个样本记录一次进度
-            if (i - sequence_length) % 1000 == 0:
-                logger.log_info(f"已处理 {i - sequence_length}/{total_samples} 个样本")
+            # # 每1000个样本记录一次进度
+            # if (i - sequence_length) % 1000 == 0:
+            #     logger.log_info(f"已处理 {i - sequence_length}/{total_samples} 个样本")
     
     return np.array(predictions)
 
@@ -103,7 +103,7 @@ def main():
         
         # 加载模型
         logger.log_info("加载模型...")
-        model_path = os.path.join(config.logging.model_dir, "save", "best_model.pth")
+        model_path = os.path.join(config.logging.model_dir, "predict", "model.pth")
         model = load_model(config, model_path)
         logger.log_info("模型加载完成")
         
@@ -123,9 +123,11 @@ def main():
         df['prediction_temperature'] = np.nan
         
         # 转换回实际温度值
-        actual_predictions = data_processor.inverse_transform(
-            predictions.reshape(-1, 1)  # 将预测结果重塑为2D数组
-        ).flatten()  # 转换回1D数组
+        # 创建一个与训练时相同维度的数组，其他特征填充为0
+        full_predictions = np.zeros((len(predictions), len(config.data.input_features)))
+        full_predictions[:, 0] = predictions  # 将温度预测值放在第一列
+        
+        actual_predictions = data_processor.inverse_transform(full_predictions)[:, 0]  # 只取温度列
         
         # 填充实际温度值
         df.loc[config.data.sequence_length:, 'prediction_temperature'] = actual_predictions
